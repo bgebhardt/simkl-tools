@@ -10,6 +10,7 @@ BASE_URL = "https://api.simkl.com"
 
 VALID_MEDIA_TYPES = frozenset({"movies", "shows", "anime"})
 VALID_STATUSES = frozenset({"watching", "plantowatch", "hold", "completed", "dropped"})
+VALID_EPISODE_MEDIA_TYPES = frozenset({"shows"})
 
 
 class SimklClient:
@@ -75,6 +76,22 @@ class SimklClient:
             f"/sync/all-items/{media_type}/{status}",
             params=params,
             require_auth=True,
+        )
+
+    def show_episodes(self, simkl_id: int | str, extended: str = "full") -> list:
+        """Return episode metadata for a show by SIMKL ID.
+
+        Calls GET /tv/episodes/{simkl_id}. SIMKL includes episode air dates
+        here even when /sync/all-items only reports not_aired_episodes_count.
+        """
+        if not simkl_id:
+            raise ValueError("simkl_id is required")
+
+        return self._request(
+            "GET",
+            f"/tv/episodes/{simkl_id}",
+            params={"extended": extended},
+            require_auth=False,
         )
 
     def add_to_list(

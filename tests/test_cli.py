@@ -88,6 +88,52 @@ class TestListCommand:
             run_cli("list", env_overrides={"SIMKL_ACCESS_TOKEN": None})
 
 
+class TestUpcomingCommand:
+    def test_upcoming_enriches_watching_shows_with_episode_dates(self):
+        watchlist = {
+            "shows": [
+                {
+                    "status": "watching",
+                    "last_watched": "S01E04",
+                    "not_aired_episodes_count": 4,
+                    "show": {"title": "Star City", "ids": {"simkl": 2437809}},
+                }
+            ]
+        }
+        episodes = [
+            {"season": 1, "episode": 5, "title": "Bite Your Elbow", "date": "2999-01-01T00:00:00+00:00"},
+            {"season": 1, "episode": 6, "title": "Later", "date": "2999-01-10T00:00:00+00:00"},
+        ]
+        with patch("simkl_tools.cli.datetime") as MockDateTime:
+            from datetime import datetime, timezone
+
+            MockDateTime.now.return_value = datetime(2998, 12, 31, 12, 0, tzinfo=timezone.utc)
+            MockDateTime.fromisoformat.side_effect = datetime.fromisoformat
+            with patch("simkl_tools.cli.SimklClient") as MockClient:
+                MockClient.return_value.all_items.return_value = watchlist
+                MockClient.return_value.show_episodes.return_value = episodes
+                stdout, _ = run_cli("upcoming", "--hours", "24")
+
+        result = json.loads(stdout)
+        assert result["items"][0]["show"]["title"] == "Star City"
+        assert result["items"][0]["episode"]["episode"] == 5
+        MockClient.return_value.all_items.assert_called_once_with(
+            media_type="shows",
+            status="watching",
+            extended="full",
+        )
+        MockClient.return_value.show_episodes.assert_called_once_with(2437809, extended="full")
+
+    def test_upcoming_skips_shows_without_unaired_by_default(self):
+        watchlist = {"shows": [{"not_aired_episodes_count": 0, "show": {"title": "Done", "ids": {"simkl": 1}}}]}
+        with patch("simkl_tools.cli.SimklClient") as MockClient:
+            MockClient.return_value.all_items.return_value = watchlist
+            stdout, _ = run_cli("upcoming")
+
+        assert json.loads(stdout)["items"] == []
+        MockClient.return_value.show_episodes.assert_not_called()
+
+
 class TestDryRunSafety:
     def test_add_to_list_defaults_to_dry_run(self):
         items_json = json.dumps([{"ids": {"simkl": 1}, "type": "movies"}])

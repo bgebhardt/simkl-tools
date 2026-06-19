@@ -47,6 +47,7 @@ simkl-tools config-check
 # Read
 simkl-tools list --type shows --status watching
 simkl-tools list --type movies --status plantowatch
+simkl-tools upcoming --hours 24
 
 # Dry-run write (safe)
 simkl-tools move completed '[{"ids":{"simkl":12345},"type":"shows"}]'
@@ -60,5 +61,6 @@ simkl-tools mark-watched '[...]' --execute
 ## Near-term additions
 
 - `simkl-tools auth` — OAuth PIN/device-code flow helper to get an access token
+- `simkl-tools upcoming` — enrich watching shows with episode dates for new-today recommendations
 - `simkl-tools suggest` — Hermes picks next watch from plan-to-watch
 - Local cache with `date_from` incremental sync
