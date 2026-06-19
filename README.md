@@ -29,26 +29,63 @@ Or with pip:
 pip install -e .
 ```
 
+`uv sync` installs everything into `.venv` but does **not** activate it. Use the included `./simkl` wrapper script (see below) — it handles venv and `.env` loading automatically.
+
 ### 2. Create a SIMKL developer app
 
 1. Go to <https://simkl.com/settings/developer/> and create a new app.
 2. Note your **Client ID**.
-3. Use the OAuth flow (or the SIMKL API sandbox) to obtain an **Access Token** with the `public` and `sync` scopes. For personal local use, the PIN/device-code flow is simplest:
-   ```
-   GET https://api.simkl.com/oauth/pin?client_id=YOUR_CLIENT_ID
-   # follow the user_code URL in a browser, approve, then:
-   GET https://api.simkl.com/oauth/pin/DEVICE_CODE?client_id=YOUR_CLIENT_ID
-   # repeat until "result": "approved" — the response contains your access_token
-   ```
 
-### 3. Set environment variables
+### 3. Get an access token via the PIN flow
 
-Copy `.env.example` to `.env` and fill in your values, then `source .env` (or use `direnv`):
+The access token is obtained through SIMKL's PIN/device-code OAuth flow. Run each `curl` in your terminal:
+
+**Step 1 — request a PIN:**
+```sh
+curl "https://api.simkl.com/oauth/pin?client_id=YOUR_CLIENT_ID"
+```
+Response:
+```json
+{ "user_code": "12345", "verification_url": "https://simkl.com/pin", ... }
+```
+
+**Step 2 — approve in your browser:**
+
+Visit `https://simkl.com/pin/USER_CODE` (substituting the `user_code` from step 1) and click **Approve**.
+
+**Step 3 — poll for the token:**
+```sh
+curl "https://api.simkl.com/oauth/pin/USER_CODE?client_id=YOUR_CLIENT_ID"
+```
+Once you've approved in the browser, this returns:
+```json
+{ "result": "OK", "access_token": "abc123..." }
+```
+Copy the `access_token` value — that's what goes in `SIMKL_ACCESS_TOKEN`.
+
+> **Note:** Approving an app in SIMKL's developer settings page is separate — that registers the app itself. You still need the PIN flow above to get a token tied to your user account.
+
+### 4. Set environment variables
+
+Copy `.env.example` to `.env` and fill in your `SIMKL_CLIENT_ID` and `SIMKL_ACCESS_TOKEN`:
 
 ```sh
 cp .env.example .env
 $EDITOR .env
-source .env
+```
+
+### 5. Run via the wrapper script
+
+The repo includes a `./simkl` wrapper that automatically passes `--env-file .env` to `uv run`, so you never need to source `.env` manually:
+
+```sh
+./simkl config-check
+```
+
+All examples in this README use `./simkl`. If you prefer, you can also invoke directly with:
+
+```sh
+uv run --env-file .env ./simkl config-check
 ```
 
 ---
@@ -67,7 +104,7 @@ source .env
 ## CLI usage
 
 ```
-simkl-tools <subcommand> [options]
+./simkl <subcommand> [options]
 ```
 
 ### `config-check`
@@ -75,7 +112,7 @@ simkl-tools <subcommand> [options]
 Verify that env vars are configured correctly before making any API calls.
 
 ```sh
-simkl-tools config-check
+./simkl config-check
 ```
 
 ### `list`
@@ -84,13 +121,13 @@ Fetch items from your watchlist.
 
 ```sh
 # shows currently watching (default)
-simkl-tools list
+./simkl list
 
 # movies you plan to watch
-simkl-tools list --type movies --status plantowatch
+./simkl list --type movies --status plantowatch
 
 # anime updated since a date
-simkl-tools list --type anime --status watching --date-from 2024-01-01T00:00:00Z
+./simkl list --type anime --status watching --date-from 2024-01-01T00:00:00Z
 ```
 
 Options: `--type {anime,movies,shows}`, `--status {completed,dropped,hold,plantowatch,watching}`, `--date-from YYYY-MM-DDTHH:MM:SSZ`, `--extended full`
@@ -101,13 +138,13 @@ Move one or more items to a different watchlist status. **Dry-run by default.**
 
 ```sh
 # Preview what would be sent:
-simkl-tools add-to-list plantowatch '[{"ids":{"simkl":12345},"type":"shows"}]'
+./simkl add-to-list plantowatch '[{"ids":{"simkl":12345},"type":"shows"}]'
 
 # Or read the item payload from a file:
-simkl-tools add-to-list plantowatch --item-json ./item.json
+./simkl add-to-list plantowatch --item-json ./item.json
 
 # Actually send:
-simkl-tools add-to-list plantowatch --item-json ./item.json --execute
+./simkl add-to-list plantowatch --item-json ./item.json --execute
 ```
 
 Alias: `move`.
@@ -118,10 +155,10 @@ Add items to your watch history via `POST /sync/history`. **Dry-run by default.*
 
 ```sh
 # Preview:
-simkl-tools add-history '[{"ids":{"simkl":12345},"type":"movies","watched_at":"2024-06-01T20:00:00Z"}]'
+./simkl add-history '[{"ids":{"simkl":12345},"type":"movies","watched_at":"2024-06-01T20:00:00Z"}]'
 
 # Actually send:
-simkl-tools add-history --item-json ./watched.json --execute
+./simkl add-history --item-json ./watched.json --execute
 ```
 
 Alias: `mark-watched`.
@@ -171,7 +208,7 @@ Credentials are read exclusively from environment variables and are never writte
 ## Running tests
 
 ```sh
-uv run pytest -v
+uv run --env-file .env pytest -v
 ```
 
 All tests are offline (no network calls). Secrets are never referenced in tests.

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper: loads .env from the project root, then delegates to simkl-tools.
+# Usage: ./simkl <subcommand> [options]
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --env-file "$DIR/.env" simkl-tools "$@"
