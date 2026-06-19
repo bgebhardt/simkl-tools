@@ -132,6 +132,25 @@ Fetch items from your watchlist.
 
 Options: `--type {anime,movies,shows}`, `--status {completed,dropped,hold,plantowatch,watching}`, `--date-from YYYY-MM-DDTHH:MM:SSZ`, `--extended full`
 
+### `upcoming`
+
+Find currently-watching shows with episodes airing soon. This enriches your watchlist with SIMKL episode metadata from `GET /tv/episodes/{simkl_id}` so Kermit can spot “new tonight” options like Star City.
+
+```sh
+# episodes releasing in the next 24 hours, plus the last 6 hours
+./simkl upcoming
+
+# look ahead 12 hours
+./simkl upcoming --hours 12
+
+# check every watching show, not only shows with unaired episodes
+./simkl upcoming --all
+```
+
+Options: `--hours N`, `--past-hours N`, `--status {completed,dropped,hold,plantowatch,watching}`, `--extended full`, `--all`.
+
+SIMKL sometimes reports dates as release-date/midnight timestamps rather than exact local broadcast times, so treat the output as “imminent/new today” guidance rather than a perfect TV Guide.
+
 ### `add-to-list`
 
 Move one or more items to a different watchlist status. **Dry-run by default.**

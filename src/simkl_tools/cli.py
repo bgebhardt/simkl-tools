@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 
 from .client import VALID_MEDIA_TYPES, VALID_STATUSES, SimklClient
 from .config import load_config
@@ -118,6 +119,89 @@ def cmd_add_history(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+
+def _parse_simkl_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def cmd_upcoming(args: argparse.Namespace) -> None:
+    try:
+        cfg = load_config(require_token=True)
+    except ValueError as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    client = SimklClient(cfg)
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(hours=args.hours)
+    include_past_since = now - timedelta(hours=args.past_hours)
+
+    try:
+        watchlist = client.all_items(
+            media_type="shows",
+            status=args.status,
+            extended=args.extended,
+        )
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    upcoming: list[dict] = []
+    for item in watchlist.get("shows", []):
+        show = item.get("show", {})
+        simkl_id = show.get("ids", {}).get("simkl")
+        if not simkl_id:
+            continue
+        if not args.all and not item.get("not_aired_episodes_count"):
+            continue
+
+        try:
+            episodes = client.show_episodes(simkl_id, extended=args.extended)
+        except (ValueError, RuntimeError) as e:
+            upcoming.append({"show": show, "error": str(e)})
+            continue
+
+        for ep in episodes:
+            air_dt = _parse_simkl_datetime(ep.get("date"))
+            if not air_dt:
+                continue
+            air_utc = air_dt.astimezone(timezone.utc)
+            if include_past_since <= air_utc <= window_end:
+                upcoming.append(
+                    {
+                        "show": show,
+                        "status": item.get("status"),
+                        "last_watched": item.get("last_watched"),
+                        "last_watched_at": item.get("last_watched_at"),
+                        "watched_episodes_count": item.get("watched_episodes_count"),
+                        "total_episodes_count": item.get("total_episodes_count"),
+                        "not_aired_episodes_count": item.get("not_aired_episodes_count"),
+                        "episode": ep,
+                        "air_date": ep.get("date"),
+                        "air_date_utc": air_utc.isoformat(),
+                        "hours_until": round((air_utc - now).total_seconds() / 3600, 2),
+                    }
+                )
+
+    upcoming.sort(key=lambda row: row.get("air_date_utc", ""))
+    result = {
+        "generated_at": now.isoformat(),
+        "window_hours": args.hours,
+        "past_hours": args.past_hours,
+        "status": args.status,
+        "items": upcoming,
+        "limitations": [
+            "SIMKL episode dates may be release dates or midnight timestamps, not exact local broadcast times for every network.",
+            "This command enriches the watching list with /tv/episodes/{simkl_id}; it does not modify SIMKL.",
+        ],
+    }
+    print(json.dumps(result, indent=2))
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="simkl-tools",
@@ -152,6 +236,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--extended",
         default="full",
         help="Extended info level (default: full)",
+    )
+
+
+    p_upcoming = sub.add_parser(
+        "upcoming",
+        help="Find currently-watching shows with episodes airing soon",
+    )
+    p_upcoming.add_argument(
+        "--hours",
+        type=int,
+        default=24,
+        help="Look ahead this many hours from now (default: 24)",
+    )
+    p_upcoming.add_argument(
+        "--past-hours",
+        type=int,
+        default=6,
+        help="Also include episodes released in the last N hours (default: 6)",
+    )
+    p_upcoming.add_argument(
+        "--status",
+        choices=sorted(VALID_STATUSES),
+        default="watching",
+        help="Watchlist status to inspect (default: watching)",
+    )
+    p_upcoming.add_argument(
+        "--extended",
+        default="full",
+        help="Extended info level (default: full)",
+    )
+    p_upcoming.add_argument(
+        "--all",
+        action="store_true",
+        help="Check every show in the status list, not only shows with not-yet-aired episodes",
     )
 
     p_add_list = sub.add_parser(
@@ -210,6 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
 _DISPATCH = {
     "config-check": cmd_config_check,
     "list": cmd_list,
+    "upcoming": cmd_upcoming,
     "add-to-list": cmd_add_to_list,
     "move": cmd_add_to_list,
     "add-history": cmd_add_history,

@@ -88,6 +88,11 @@ class TestValidation:
         with pytest.raises(ValueError, match="Invalid target_status"):
             client.add_to_list([], "wishlist", dry_run=True)
 
+    def test_show_episodes_requires_id(self):
+        client = SimklClient(make_config())
+        with pytest.raises(ValueError, match="simkl_id is required"):
+            client.show_episodes("")
+
 
 class TestMissingConfig:
     def test_no_token_raises_on_authenticated_request(self):
@@ -167,3 +172,21 @@ class TestDryRun:
 
         mock_open.assert_called_once()
         assert result == {"added": 1}
+
+
+class TestEpisodeDetails:
+    def test_show_episodes_uses_tv_episode_endpoint(self):
+        client = SimklClient(make_config())
+        with patch("urllib.request.urlopen", return_value=fake_urlopen([])):
+            client.show_episodes(2437809)
+            req = urllib.request.urlopen.call_args[0][0]
+
+        assert "/tv/episodes/2437809" in req.full_url
+        assert "extended=full" in req.full_url
+        assert req.get_header("Authorization") is None
+
+    def test_show_episodes_returns_list(self):
+        episodes = [{"season": 1, "episode": 5, "date": "2026-06-19T00:00:00-05:00"}]
+        client = SimklClient(make_config())
+        with patch("urllib.request.urlopen", return_value=fake_urlopen(episodes)):
+            assert client.show_episodes(2437809) == episodes
