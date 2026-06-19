@@ -18,7 +18,7 @@ Local CLI and Python library for inspecting and managing Bryan's [SIMKL](https:/
 ### 1. Clone and install
 
 ```sh
-git clone <repo>
+git clone https://github.com/bgebhardt/simkl-tools
 cd simkl-tools
 uv sync --dev          # installs package + pytest in .venv
 ```
@@ -194,4 +194,3 @@ These projects were used as API surface references during development. No code w
 - `suggest` subcommand — Hermes/Kermit picks next watch from plan-to-watch list based on genre/mood
 - Richer output formatting (table, compact) via `--format`
 - Cache layer: store list locally and only fetch changed items via `date_from`
-- GitHub Actions CI
