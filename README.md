@@ -8,6 +8,7 @@ Local CLI and Python library for inspecting and managing Bryan's [SIMKL](https:/
 
 - Read watchlists (`movies`, `shows`, `anime`) filtered by status
 - Dry-run-safe writes: move items between statuses, mark items watched
+- TMDB watch-provider lookup for plan-to-watch movies (`providers`)
 - Pure stdlib HTTP — no `requests`, no heavy deps
 - Config from env vars only — no credentials ever touch a file
 
@@ -98,6 +99,9 @@ uv run --env-file .env ./simkl config-check
 | `SIMKL_ACCESS_TOKEN`  | for writes/reads | —    | OAuth bearer token (personal account) |
 | `SIMKL_APP_NAME`      | no       | `simkl-tools`  | Sent as `app-name` query param       |
 | `SIMKL_APP_VERSION`   | no       | `0.1.0`        | Sent as `app-version` query param    |
+| `TMDB_API_KEY`        | for `providers` (unless bearer token set) | — | TMDB v3 API key, sent as `?api_key=` |
+| `TMDB_BEARER_TOKEN`   | for `providers` (unless API key set) | — | TMDB v4 read access token, sent as an Authorization Bearer header. Takes precedence over `TMDB_API_KEY` if both are set |
+| `TMDB_ACCESS_TOKEN`   | no       | —              | Alias for `TMDB_BEARER_TOKEN`        |
 
 ---
 
@@ -150,6 +154,25 @@ Find currently-watching shows with episodes airing soon. This enriches your watc
 Options: `--hours N`, `--past-hours N`, `--status {completed,dropped,hold,plantowatch,watching}`, `--extended full`, `--all`.
 
 SIMKL sometimes reports dates as release-date/midnight timestamps rather than exact local broadcast times, so treat the output as “imminent/new today” guidance rather than a perfect TV Guide.
+
+### `providers`
+
+Look up TMDB watch-provider availability (streaming/rent/buy) for movies on a SIMKL list, e.g. to decide what's actually watchable tonight from your plan-to-watch pile. Read-only — makes no writes to SIMKL or TMDB.
+
+```sh
+# plan-to-watch movies, US region (defaults)
+./simkl providers
+
+# a different status/region
+./simkl providers --status watching --region GB
+
+# machine-readable output
+./simkl providers --format json
+```
+
+Options: `--status {completed,dropped,hold,plantowatch,watching}` (default: `plantowatch`), `--region CODE` (ISO 3166-1, default: `US`), `--format {text,json}` (default: `text`).
+
+Requires TMDB credentials — see `TMDB_API_KEY`/`TMDB_BEARER_TOKEN` in [Environment variables](#environment-variables). Movies without a TMDB id on the SIMKL entry, or that error on the TMDB lookup, are reported per-movie instead of failing the whole command.
 
 ### `add-to-list`
 
@@ -208,6 +231,16 @@ client.add_to_history(
     [{"ids": {"simkl": 67890}, "type": "movies"}],
     dry_run=False,
 )
+```
+
+```python
+from simkl_tools.config import load_tmdb_config
+from simkl_tools.tmdb import TmdbClient, providers_for_region
+
+tmdb = TmdbClient(load_tmdb_config())
+response = tmdb.watch_providers(550)  # TMDB movie id
+providers_for_region(response, "US")
+# {"flatrate": ["Netflix"], "buy": ["Apple TV", "Amazon Video"]}
 ```
 
 ---

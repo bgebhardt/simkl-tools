@@ -134,6 +134,84 @@ class TestUpcomingCommand:
         MockClient.return_value.show_episodes.assert_not_called()
 
 
+class TestProvidersCommand:
+    WATCHLIST = {
+        "movies": [
+            {"movie": {"title": "Fight Club", "ids": {"simkl": 1, "tmdb": 550}}},
+            {"movie": {"title": "No TMDB Id", "ids": {"simkl": 2}}},
+        ]
+    }
+
+    PROVIDERS_RESPONSE = {
+        "results": {
+            "US": {
+                "flatrate": [{"provider_name": "Netflix"}],
+                "buy": [{"provider_name": "Apple TV"}],
+            }
+        }
+    }
+
+    def test_calls_all_items_with_movies_and_default_status(self):
+        with patch("simkl_tools.cli.SimklClient") as MockClient, patch("simkl_tools.cli.TmdbClient"):
+            MockClient.return_value.all_items.return_value = {"movies": []}
+            run_cli("providers", env_overrides={"TMDB_API_KEY": "test_key"})
+
+        MockClient.return_value.all_items.assert_called_once_with(media_type="movies", status="plantowatch")
+
+    def test_missing_tmdb_credentials_exits_nonzero(self):
+        with patch("simkl_tools.cli.SimklClient") as MockClient:
+            MockClient.return_value.all_items.return_value = {"movies": []}
+            _, stderr = run_cli("providers", expected_exit=1)
+
+        assert "TMDB" in stderr
+
+    def test_text_output_groups_providers_by_category(self):
+        with patch("simkl_tools.cli.SimklClient") as MockClient, patch("simkl_tools.cli.TmdbClient") as MockTmdb:
+            MockClient.return_value.all_items.return_value = self.WATCHLIST
+            MockTmdb.return_value.watch_providers.return_value = self.PROVIDERS_RESPONSE
+            stdout, _ = run_cli("providers", env_overrides={"TMDB_API_KEY": "test_key"})
+
+        assert "Fight Club: flatrate=Netflix | buy=Apple TV" in stdout
+        assert "No TMDB Id: No TMDB id on this SIMKL entry" in stdout
+
+    def test_json_output(self):
+        with patch("simkl_tools.cli.SimklClient") as MockClient, patch("simkl_tools.cli.TmdbClient") as MockTmdb:
+            MockClient.return_value.all_items.return_value = self.WATCHLIST
+            MockTmdb.return_value.watch_providers.return_value = self.PROVIDERS_RESPONSE
+            stdout, _ = run_cli("providers", "--format", "json", env_overrides={"TMDB_API_KEY": "test_key"})
+
+        result = json.loads(stdout)
+        assert result["status"] == "plantowatch"
+        assert result["region"] == "US"
+        assert result["items"][0]["title"] == "Fight Club"
+        assert result["items"][0]["providers"]["flatrate"] == ["Netflix"]
+        assert result["items"][1]["error"] == "No TMDB id on this SIMKL entry"
+
+    def test_tmdb_error_reported_per_movie(self):
+        with patch("simkl_tools.cli.SimklClient") as MockClient, patch("simkl_tools.cli.TmdbClient") as MockTmdb:
+            MockClient.return_value.all_items.return_value = {
+                "movies": [{"movie": {"title": "Broken", "ids": {"simkl": 1, "tmdb": 999}}}]
+            }
+            MockTmdb.return_value.watch_providers.side_effect = RuntimeError("TMDB API error 404: not found")
+            stdout, _ = run_cli("providers", env_overrides={"TMDB_API_KEY": "test_key"})
+
+        assert "Broken: TMDB API error 404: not found" in stdout
+
+    def test_custom_status_and_region_passed_through(self):
+        with patch("simkl_tools.cli.SimklClient") as MockClient, patch("simkl_tools.cli.TmdbClient"):
+            MockClient.return_value.all_items.return_value = {"movies": []}
+            run_cli(
+                "providers",
+                "--status",
+                "watching",
+                "--region",
+                "GB",
+                env_overrides={"TMDB_BEARER_TOKEN": "test_bearer"},
+            )
+
+        MockClient.return_value.all_items.assert_called_once_with(media_type="movies", status="watching")
+
+
 class TestDryRunSafety:
     def test_add_to_list_defaults_to_dry_run(self):
         items_json = json.dumps([{"ids": {"simkl": 1}, "type": "movies"}])
