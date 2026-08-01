@@ -4,7 +4,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from .client import VALID_MEDIA_TYPES, VALID_STATUSES, SimklClient
-from .config import load_config
+from .config import load_config, load_tmdb_config
+from .tmdb import TmdbClient, providers_for_region
 
 
 def cmd_config_check(args: argparse.Namespace) -> None:
@@ -202,6 +203,68 @@ def cmd_upcoming(args: argparse.Namespace) -> None:
     }
     print(json.dumps(result, indent=2))
 
+def cmd_providers(args: argparse.Namespace) -> None:
+    try:
+        cfg = load_config(require_token=True)
+    except ValueError as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        tmdb_cfg = load_tmdb_config()
+    except ValueError as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    client = SimklClient(cfg)
+    tmdb = TmdbClient(tmdb_cfg)
+
+    try:
+        watchlist = client.all_items(media_type="movies", status=args.status)
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    rows: list[dict] = []
+    for item in watchlist.get("movies", []):
+        movie = item.get("movie", {})
+        title = movie.get("title", "Unknown")
+        tmdb_id = movie.get("ids", {}).get("tmdb")
+
+        if not tmdb_id:
+            rows.append({"title": title, "tmdb_id": None, "error": "No TMDB id on this SIMKL entry"})
+            continue
+
+        try:
+            response = tmdb.watch_providers(tmdb_id)
+        except (ValueError, RuntimeError) as e:
+            rows.append({"title": title, "tmdb_id": tmdb_id, "error": str(e)})
+            continue
+
+        rows.append(
+            {
+                "title": title,
+                "tmdb_id": tmdb_id,
+                "providers": providers_for_region(response, args.region),
+            }
+        )
+
+    if args.format == "json":
+        print(json.dumps({"status": args.status, "region": args.region, "items": rows}, indent=2))
+        return
+
+    for row in rows:
+        if row.get("error"):
+            print(f"{row['title']}: {row['error']}")
+            continue
+        providers = row["providers"]
+        if not providers:
+            print(f"{row['title']}: no watch providers found for {args.region}")
+            continue
+        summary = " | ".join(f"{category}={', '.join(names)}" for category, names in providers.items())
+        print(f"{row['title']}: {summary}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="simkl-tools",
@@ -272,6 +335,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check every show in the status list, not only shows with not-yet-aired episodes",
     )
 
+    p_providers = sub.add_parser(
+        "providers",
+        help="Show TMDB watch-provider availability for movies on your SIMKL list",
+    )
+    p_providers.add_argument(
+        "--status",
+        choices=sorted(VALID_STATUSES),
+        default="plantowatch",
+        help="Watchlist status to inspect (default: plantowatch)",
+    )
+    p_providers.add_argument(
+        "--region",
+        default="US",
+        help="ISO 3166-1 region code for provider availability (default: US)",
+    )
+    p_providers.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+
     p_add_list = sub.add_parser(
         "add-to-list",
         aliases=["move"],
@@ -329,6 +414,7 @@ _DISPATCH = {
     "config-check": cmd_config_check,
     "list": cmd_list,
     "upcoming": cmd_upcoming,
+    "providers": cmd_providers,
     "add-to-list": cmd_add_to_list,
     "move": cmd_add_to_list,
     "add-history": cmd_add_history,

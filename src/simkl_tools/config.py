@@ -13,6 +13,12 @@ class Config:
     app_version: str
 
 
+@dataclass
+class TmdbConfig:
+    api_key: str | None
+    bearer_token: str | None
+
+
 def load_config(*, require_token: bool = False) -> Config:
     client_id = os.environ.get("SIMKL_CLIENT_ID", "")
     access_token = os.environ.get("SIMKL_ACCESS_TOKEN") or None
@@ -30,3 +36,15 @@ def load_config(*, require_token: bool = False) -> Config:
         app_name=app_name,
         app_version=app_version,
     )
+
+
+def load_tmdb_config() -> TmdbConfig:
+    api_key = os.environ.get("TMDB_API_KEY") or None
+    bearer_token = os.environ.get("TMDB_BEARER_TOKEN") or os.environ.get("TMDB_ACCESS_TOKEN") or None
+
+    if not api_key and not bearer_token:
+        raise ValueError(
+            "TMDB credentials required: set TMDB_API_KEY or TMDB_BEARER_TOKEN/TMDB_ACCESS_TOKEN"
+        )
+
+    return TmdbConfig(api_key=api_key, bearer_token=bearer_token)
